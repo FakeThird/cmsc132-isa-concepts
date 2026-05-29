@@ -1,5 +1,8 @@
+# Filename: bin_convert.py
+# This file contains two binary conversion classes and a length-fixing class
 import math
 
+# Class: Length: Contains constant lengths and length-related static Methods.
 class Length:
 	whole = 5
 	precision = 16	#length of precision
@@ -20,6 +23,7 @@ class Length:
 			return value.zfill(strlen)
 		return value+"".zfill(strlen-len(value))
 
+# Class: BinaryFraction: Converts fractional decimal to fractional binary and vice versa.
 class BinaryFraction:
 	@staticmethod
 	def idec2bin(idec,ibinlen=Length.fraction):
@@ -29,6 +33,7 @@ class BinaryFraction:
 		istart = ibin.find(".")
 		return int(ibin[istart+1:], 2) / 2.**(len(ibin))
 
+# Class: HalfPrecision: Converts decimal to Half Precision binary format.
 class HalfPrecision:
 	@staticmethod
 	def hpbin2dec(binum,binlen=Length.whole):
@@ -59,6 +64,8 @@ class HalfPrecision:
 		result = HalfPrecision.hpdec2bin(result)
 		return result
 
+# Included: A tester on how many decimal values are correctly converted by Half Precision format. Don’t use it
+# if you don’t know how to use it.
 find_fake = False
 if find_fake:
 	fake_cntr = 0

@@ -6,6 +6,7 @@
 from bin_convert import HalfPrecision, Length
 import copy
 
+# Class: Storage: Use to store and load data from a storage. It can also display the values of the storage.
 class Storage:
 	def __init__(self, data={}):
 		self.data = copy.deepcopy(data)
