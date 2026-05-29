@@ -116,8 +116,8 @@ class Program:
             elif category == 3:  # MUL
                 return op1 * op2
             elif category == 4:  # DIV — handle division by zero
-                exc = Program.exception('DivByZero', (op1, op2))
-                if exc.isOccur():
+                if op2 == 0:
+                    exc = Program.exception('DivByZero', (op1, op2))
                     exc.dispMSG()
                     return exc.getReturn()
                 return op1 / op2
@@ -171,10 +171,11 @@ class Program:
         elif movecode == 3:
             # SCAN: print the associated message then read user input
             msg_dict = variable.data.get("MSG", {})
-            msg_idx  = variable.data.get("MI", 0)
-            if msg_idx > 0 and (msg_idx - 1) in msg_dict:
-                print(msg_dict[msg_idx - 1], end="")
-            src = float(input())
+            scan_idx  = variable.data.get("SI", 0)
+            if scan_idx in msg_dict:
+                print(msg_dict[scan_idx], end="")
+            variable.data["SI"] = scan_idx + 1  # Increment message index for next SCAN
+            src = float(input())  # Read user input as a float (could be int or HP, but float is more general)
 
         # Default move: src → dest (always performed)
         dest_addr, dest_type = dest
@@ -215,19 +216,19 @@ class Program:
                 return memory.load(disp_addr)
 
         if mode == 0:    # Register
-            addr = HalfPrecision.hpbin2dec(addr_bits)
+            addr = int(addr_bits, 2)
             return AddressingMode.register(int(addr))
 
         elif mode == 1:  # Register Indirect
-            addr = HalfPrecision.hpbin2dec(addr_bits)
+            addr = int(addr_bits, 2)
             return AddressingMode.register_indirect(int(addr))
 
         elif mode == 2:  # Direct
-            addr = HalfPrecision.hpbin2dec(addr_bits)
+            addr = int(addr_bits, 2)
             return AddressingMode.direct(int(addr))
 
         elif mode == 3:  # Indirect
-            addr = HalfPrecision.hpbin2dec(addr_bits)
+            addr = int(addr_bits, 2)
             return AddressingMode.indirect(int(addr))
 
         elif mode == 4:  # Indexed — displacement from register or memory
@@ -241,16 +242,25 @@ class Program:
             return AddressingMode.indexed(displace)
 
         elif mode == 6:  # Auto-Increment
-            addr = HalfPrecision.hpbin2dec(addr_bits)
+            addr = int(addr_bits, 2)
             return AddressingMode.autoinc(int(addr))
 
         elif mode == 7:  # Auto-Decrement
-            addr = HalfPrecision.hpbin2dec(addr_bits)
+            addr = int(addr_bits, 2)
             return AddressingMode.autodec(int(addr))
 
     def getOp2(self, inscode, ib, rb, extra_bits):
         """
         Decode operand 2, accounting for the ib and rb flags.
+
+        FIX (BUG 1): Immediate reconstruction now correctly pads to
+        16 bits using '0' + inscode + extra_bits (1 + 10 + 5 = 16).
+        The sign bit is prepended as '0' (positive), which is correct
+        for small positive immediates that fit in the available bits.
+ 
+        FIX (WARN 1): Based/Relative displacement branches now
+        consistently strip addr_bits[0] (the type flag) before using
+        the remaining 6 bits as a register or memory address.
 
         Parameters:
             inscode    : 10-bit binary string (Op2Mode + Op2Addr).
@@ -262,31 +272,7 @@ class Program:
             The decoded value of operand 2.
         """
         if ib == 1:
-            # Immediate: reconstruct the 16-bit HP binary from op2 + extra
-            # encode() stores: ib=1, op2_mode=000, op2_addr=0000000, extra=last 5 bits
-            # The first 11 bits of the HP value sit in bits 17-27 implicitly via
-            # the encodeOp immediate branch returning a 16-bit string, of which
-            # encode() takes the last 5 bits as extra_bits.
-            # We need to recover the full 16-bit value: inscode gives the first 11 bits.
-            hp_bin = inscode + extra_bits   # 10 + 5 = no, we need the full 16 bits
-            # encode() sets encoded_op2_mode='000'(3), encoded_op2_addr='0000000'(7),
-            # extra_bits = raw_op2_code[11:] (last 5 bits of the 16-bit HP string).
-            # The first 11 bits of the HP value = raw_op2_code[0:11].
-            # inscode (10 bits) = op2_mode(3=000) + op2_addr(7=0000000) = all zeros.
-            # So the actual HP binary = raw_op2_code[0:11] + extra_bits
-            # But inscode is all zeros (placeholder), so we can't recover those bits.
-            # The full HP value = (inscode as the first part is zeroed in encode).
-            # Correct reconstruction: the HP binary is bits 17-31 of the instruction.
-            # bits 17-19 = op2_mode (3 bits), bits 20-26 = op2_addr (7 bits),
-            # bits 27-31 = extra (5 bits) → concatenated = 15 bits.
-            # But HP is 16 bits. The leading bit (sign bit) would be in the 16th slot.
-            # Looking at encode(): extra_bits = raw_op2_code[11:] — that's 5 bits.
-            # The first 11 bits are NOT stored anywhere useful; they're zeroed out.
-            # Actually, reviewing more carefully: the full 16-bit HP string from encodeOp
-            # is split as: first 11 bits → lost (op2 fields zeroed), last 5 bits → extra.
-            # So we can only recover last 5 bits. This means immediate values are limited
-            # to what fits in 5 bits via HP encoding. Pass the available bits to immediate.
-            hp_reconstructed = '0' * 11 + extra_bits   # best effort 16-bit string
+            hp_reconstructed = '0' + inscode + extra_bits   # 1 + 10 + 5 = 16 bits for the immediate HP value
             return AddressingMode.immediate(hp_reconstructed)
 
         mode_bits = inscode[0:3]
@@ -299,20 +285,20 @@ class Program:
             return register.load(disp_addr) if disp_type == 0 else memory.load(disp_addr)
 
         if rb == 1:
-            # Based and Relative modes; mode code distinguishes sub-type
+            disp_addr = int(addr_bits[1:], 2)
             disp_val = int(addr_bits[1:], 2)
             if mode == 0:    # Based, displacement from register
-                return AddressingMode.based(register.load(int(addr_bits, 2)))
+                return AddressingMode.based(register.load(int(disp_addr)))
             elif mode == 1:  # Based, displacement from memory
-                return AddressingMode.based(memory.load(int(addr_bits, 2)))
+                return AddressingMode.based(memory.load(int(disp_addr)))
             elif mode == 2:  # Based, positive integer displacement
                 return AddressingMode.based(disp_val)
             elif mode == 3:  # Based, negative integer displacement
                 return AddressingMode.based(-disp_val)
             elif mode == 4:  # Relative, displacement from register
-                return AddressingMode.relative(register.load(int(addr_bits, 2)))
+                return AddressingMode.relative(register.load(int(disp_addr)))
             elif mode == 5:  # Relative, displacement from memory
-                return AddressingMode.relative(memory.load(int(addr_bits, 2)))
+                return AddressingMode.relative(memory.load(int(disp_addr)))
             elif mode == 6:  # Relative, positive integer displacement
                 return AddressingMode.relative(disp_val)
             elif mode == 7:  # Relative, negative integer displacement
@@ -372,6 +358,10 @@ class Program:
 
             execute_bit = int(opcode[0])
             write_bit   = int(opcode[1])
+
+            if opcode == '00001':
+                # Special case for HALT (opcode '00001'): break immediately
+                break
 
             # ── 3. Get Operand 1 ──────────────────────────────
             op1_result = self.getOp(op1code)
@@ -451,6 +441,9 @@ import os
 
 # Create the global DivByZero exception (not yet occurred)
 DivByZero = Except("Division by zero.", occur=False)
+
+# Initialize Scan Index for SCAN messages
+variable.data["SI"] = 0  
 
 # Locate the .isa file (extension matches the group shortcut)
 isa_file = None
