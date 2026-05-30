@@ -100,7 +100,6 @@ class Program:
         category  = int(opcode[2:5], 2) # Category code is the last 3 bits of the opcode
 
         op1, op2 = result
-
         if write_bit == 1:
             # Arithmetic operations, keyed by category code
             if category == 0:    # MOD
@@ -319,7 +318,6 @@ class Program:
                     or len(raw_instr) != Length.instrxn
                     or raw_instr == '0' * Length.instrxn):
                 break
-
             # ── 2. Decode ─────────────────────────────────────
             #  bits  0– 4 : opcode  (5 bits)
             #  bit   5    : ib      (1 bit, immediate)
@@ -379,9 +377,9 @@ class Program:
                 # Jump operations: if condition is True, redirect PC to op1's address
                 if write_bit == 0 and exec_result:
                     pc_addr = int(variable.load("PC"))
-                    register.store(pc_addr, op1_val)
+                    register.store(pc_addr, op1_val + 1)   # PC = target + 1
                     ir_reg  = int(variable.load("IR"))
-                    register.store(ir_reg, op1_val)
+                    register.store(ir_reg, op1_val)        # IR = target
                     jumped = True
 
             # ── 6. Write ──────────────────────────────────────
@@ -409,10 +407,10 @@ class Program:
             if not jumped:
                 pc_addr = int(variable.load("PC"))
                 pc_val  = register.load(pc_addr)
-                register.store(pc_addr, pc_val + 1)
+                register.store(pc_addr, pc_val + 1)   # PC → pc_val+1
 
                 ir_reg = int(variable.load("IR"))
-                register.store(ir_reg, pc_val + 1)
+                register.store(ir_reg, pc_val)  
 
 
 # ─────────────────────────────────────────────────────────────

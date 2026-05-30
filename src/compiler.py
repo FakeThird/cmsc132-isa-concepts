@@ -32,15 +32,15 @@ class Instruction:
 
     # For easier understanding of which mode in encodeOp
     addressing_modes = {
-        'register_mode': '0000',
-        'register_indirect': '0001',
-        'direct': '0010',
-        'indirect': '0011',
-        'indexed_regmem_disp': '0100',
-        'indexed_int_disp': '0101',
-        'auto_increment': '0110',
-        'auto_decrement': '0111',
-    }
+        'register_mode':       '000',
+        'register_indirect':   '001',
+        'direct':              '010',
+        'indirect':            '011',
+        'indexed_regmem_disp': '100',
+        'indexed_int_disp':    '101',
+        'auto_increment':      '110',
+        'auto_decrement':      '111',
+    }   
 
     # Convert the operand into Operand Code.
     @staticmethod
@@ -66,6 +66,7 @@ class Instruction:
             inner_op = operand.replace('(', '').replace(')', '')
 
             # Creates the appropriate Addressing Mode binary code
+            # relative (contains ‘Z’), based (contains ‘Y’), or indexed (contains ‘X’)
             if inner_op.startswith(('X', 'Y', 'Z')):
                 inner_op = inner_op[1:]
 
@@ -105,15 +106,23 @@ class Instruction:
                 mode = Instruction.addressing_modes['indirect']
                 addr = int(variable.load(inner_op))
 
-            return (mode + Length.addZeros(addr, 6)).zfill(10)
-
-        if operand.startswith(('R', 'PC', 'ACC')):
+            return (mode + Length.addZeros(addr, 7)).zfill(10)
+        
+        if operand.startswith(('R', 'PC', 'ACC', 'XR', 'BR', 'IR', 'CR', 'JR',
+                                'B', 'F', 'P')):
             mode = Instruction.addressing_modes['register_mode']
         else:
             mode = Instruction.addressing_modes['direct']
-        addr = int(variable.load(operand))
 
-        return (mode + Length.addZeros(addr, 6)).zfill(10)
+        lookup_target = operand
+        if operand.startswith(('Z', 'Y')):
+            lookup_target = operand[1:] # Strips 'Z' or 'Y' to leave 'R2'
+
+        # Get the address of the remaining string
+  
+        addr = int(variable.load(lookup_target))
+
+        return (mode + Length.addZeros(addr, 7)).zfill(10)
 
     # Encode the instruction into Instruction Code.
     @staticmethod
@@ -125,8 +134,8 @@ class Instruction:
         op_two = parts[2] if len(parts) > 2 else None
 
         # Returns an instruction code of all zeros
-        if op == 'FUNC':
-            return '0' * Length.instrxn   
+        if op in ('EOP', 'FUNC'):
+            return '0' * Length.instrxn 
 
         # Adds ‘BR’ to Block/Function Block
         if op == 'CB' or op == 'CF':
@@ -169,7 +178,13 @@ class Instruction:
 
         if opcode is None:
             raise ValueError(f"Unknown operation: {op}")
-
+        if op in ('PRNT', 'SCAN') and op_one is not None:
+            try:
+                float(op_one)  # it's a number
+                op_one = str(int(float(op_one)))  # keep as string address, not float
+                # then force direct mode instead of immediate
+            except ValueError:
+                pass
         raw_op_one_code = Instruction.encodeOp(op_one)
         op_one_mode = raw_op_one_code[0:3]
         op_one_addr = raw_op_one_code[3:10]   
@@ -184,10 +199,11 @@ class Instruction:
             raw_op_two_code = Instruction.encodeOp(op_two)
 
             if len(raw_op_two_code) == Length.precision:
-                ib = '1'
-                extra_bits = raw_op_two_code[11:] 
-                op_two_mode = '0' * 3
-                op_two_addr = '0' * 7
+                ib          = '1'
+                rb          = raw_op_two_code[0]      # sign bit goes into rb slot
+                op_two_mode = raw_op_two_code[1:4]    # bits 1–3
+                op_two_addr = raw_op_two_code[4:11]   # bits 4–10
+                extra_bits  = raw_op_two_code[11:16]  # bits 11–15
             else:
                 if op_two and op_two.startswith(('Z', 'Y')):
                     rb = '1'
@@ -247,7 +263,7 @@ class Instruction:
             if op in ('CB', 'CF'):
                 block_name = parts[1]
                 hp_addr = HalfPrecision.hpdec2bin(address + 1)
-                register.store(int(variable.load(block_name)), hp_addr)
+                register.store(int(variable.load(block_name)), hp_addr) 
                 encoded = Instruction.encode(line)
 
                 if isinstance(encoded, list):
