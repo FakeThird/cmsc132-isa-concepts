@@ -10,7 +10,6 @@ from compiler import Instruction
 
 # ─────────────────────────────────────────────────────────────
 # Class: Except
-# Handles exceptions that occur during execution (Step 3.1)
 # ─────────────────────────────────────────────────────────────
 
 class Except:
@@ -24,8 +23,8 @@ class Except:
             occur : Whether the exception has occurred (default True).
         """
         self.message = msg
-        self.occur   = occur
-        self.ret     = None
+        self.occur   = occur    #since there is a global checker if the exception has occurred, this is used to set the return value of the exception when it occurs
+        self.ret     = None     #the return value of the exception, which can be set when the exception is created or when it occurs
 
     def dispMSG(self):
         """Print the exception message."""
@@ -46,7 +45,6 @@ class Except:
 
 # ─────────────────────────────────────────────────────────────
 # Class: Program
-# Encodes and runs the ISA program (Steps 3.2 – 3.7)
 # ─────────────────────────────────────────────────────────────
 
 class Program:
@@ -58,9 +56,8 @@ class Program:
         Parameters:
             program : List of raw instruction strings read from the .isa file.
         """
-        Instruction.encodeProgram(program)
+        Instruction.encodeProgram(program) # Encodes the program and stores instructions in memory
 
-    # ── Step 3.2 ─────────────────────────────────────────────
     @staticmethod
     def exception(name, value):
         """
@@ -85,7 +82,6 @@ class Program:
                 exc.setReturn('undefined')
             return exc
 
-    # ── Step 3.3 ─────────────────────────────────────────────
     def execute(self, result, opcode):
         """
         Perform the Execute operation described by opcode.
@@ -100,8 +96,8 @@ class Program:
         Returns:
             Arithmetic result (Write=1) or boolean jump decision (Write=0).
         """
-        write_bit = int(opcode[1])
-        category  = int(opcode[2:5], 2)
+        write_bit = int(opcode[1]) # Write Bit is the second bit of the opcode
+        category  = int(opcode[2:5], 2) # Category code is the last 3 bits of the opcode
 
         op1, op2 = result
 
@@ -122,7 +118,7 @@ class Program:
                     return exc.getReturn()
                 return op1 / op2
 
-        else:
+        else: #if second bit of opcode is 0, then it's a jump operation, which compares JR against zero using the category code to determine the type of comparison
             # Jump operations compare JR against zero
             jr = Access.data("JR", ["var", "reg"])
             if category == 0:    # JEQ
@@ -140,7 +136,6 @@ class Program:
             elif category == 6:  # JMP (unconditional)
                 return True
 
-    # ── Step 3.4 ─────────────────────────────────────────────
     def write(self, dest, src, movecode):
         """
         Perform the Write operation.
@@ -158,9 +153,9 @@ class Program:
         """
         if movecode == 1:
             # CALL: save current PC into CR before the jump
-            pc_val  = Access.data("PC", ["var", "reg"])
-            cr_addr = int(variable.load("CR"))
-            register.store(cr_addr, pc_val)
+            pc_val  = Access.data("PC", ["var", "reg"]) # Get current PC value from register or variable storage
+            cr_addr = int(variable.load("CR"))          #load CR address from variable storage
+            register.store(cr_addr, pc_val)             #store current PC value into CR address in register storage
 
         elif movecode == 2:
             # RET: restore PC from CR before the return
@@ -181,7 +176,6 @@ class Program:
         dest_addr, dest_type = dest
         Access.store(dest_type, dest_addr, src)
 
-    # ── Step 3.5 ─────────────────────────────────────────────
     def getOp(self, inscode):
         """
         Decode a 10-bit operand code and call the correct AddressingMode.
@@ -253,15 +247,6 @@ class Program:
         """
         Decode operand 2, accounting for the ib and rb flags.
 
-        FIX (BUG 1): Immediate reconstruction now correctly pads to
-        16 bits using '0' + inscode + extra_bits (1 + 10 + 5 = 16).
-        The sign bit is prepended as '0' (positive), which is correct
-        for small positive immediates that fit in the available bits.
- 
-        FIX (WARN 1): Based/Relative displacement branches now
-        consistently strip addr_bits[0] (the type flag) before using
-        the remaining 6 bits as a register or memory address.
-
         Parameters:
             inscode    : 10-bit binary string (Op2Mode + Op2Addr).
             ib         : Immediate bit (int). 1 = immediate mode.
@@ -279,35 +264,29 @@ class Program:
         addr_bits = inscode[3:]
         mode      = int(mode_bits, 2)
 
-        def get_reg_or_mem_displace():
-            disp_type = int(addr_bits[0])
-            disp_addr = int(addr_bits[1:], 2)
-            return register.load(disp_addr) if disp_type == 0 else memory.load(disp_addr)
-
         if rb == 1:
-            disp_addr = int(addr_bits[1:], 2)
-            disp_val = int(addr_bits[1:], 2)
+            disp = int(addr_bits[1:], 2)
+           
             if mode == 0:    # Based, displacement from register
-                return AddressingMode.based(register.load(int(disp_addr)))
+                return AddressingMode.based(register.load(int(disp)))
             elif mode == 1:  # Based, displacement from memory
-                return AddressingMode.based(memory.load(int(disp_addr)))
+                return AddressingMode.based(memory.load(int(disp)))
             elif mode == 2:  # Based, positive integer displacement
-                return AddressingMode.based(disp_val)
+                return AddressingMode.based(disp)
             elif mode == 3:  # Based, negative integer displacement
-                return AddressingMode.based(-disp_val)
+                return AddressingMode.based(-disp)
             elif mode == 4:  # Relative, displacement from register
-                return AddressingMode.relative(register.load(int(disp_addr)))
+                return AddressingMode.relative(register.load(int(disp)))
             elif mode == 5:  # Relative, displacement from memory
-                return AddressingMode.relative(memory.load(int(disp_addr)))
+                return AddressingMode.relative(memory.load(int(disp)))
             elif mode == 6:  # Relative, positive integer displacement
-                return AddressingMode.relative(disp_val)
+                return AddressingMode.relative(disp)
             elif mode == 7:  # Relative, negative integer displacement
-                return AddressingMode.relative(-disp_val)
+                return AddressingMode.relative(-disp)
 
         # Standard modes (same logic as getOp)
         return self.getOp(inscode)
 
-    # ── Step 3.6 ─────────────────────────────────────────────
     def run(self):
         """
         The main CPU loop. Each iteration:
@@ -319,6 +298,8 @@ class Program:
             6. If both bits = 0, print.
             7. Copy PC to IR, then increment PC by 1.
         """
+        variable.data["SI"] = 0  # Initialize Scan Index for SCAN messages
+
         monadic = []   # reserved for future monadic operations
         niladic = []   # reserved for future niladic operations
 
@@ -404,11 +385,14 @@ class Program:
                     jumped = True
 
             # ── 6. Write ──────────────────────────────────────
+            movecode = 0  
+
             if write_bit == 1:
-                category = int(opcode[2:5], 2)
-                # Map category to movecode: MOV=0, CALL=1, RET=2, SCAN=3
-                movecode_map = {0: 0, 1: 1, 2: 2, 3: 3}
-                movecode = movecode_map.get(category, 0)
+                if execute_bit == 0:
+                    category = int(opcode[2:5], 2)
+                    # Map category to movecode: MOV=0, CALL=1, RET=2, SCAN=3
+                    movecode_map = {0: 0, 1: 1, 2: 2, 3: 3}
+                    movecode = movecode_map.get(category, 0)
 
                 # Source is the execute result for arithmetic; op2 for plain moves
                 src  = exec_result if execute_bit == 1 else op2_val
@@ -432,9 +416,7 @@ class Program:
 
 
 # ─────────────────────────────────────────────────────────────
-# Step 3.7 — File-loading block
-# Reads the .isa file, creates the DivByZero exception,
-# passes the program to Program, and calls run().
+# File-loading block
 # ─────────────────────────────────────────────────────────────
 
 import os
@@ -442,8 +424,6 @@ import os
 # Create the global DivByZero exception (not yet occurred)
 DivByZero = Except("Division by zero.", occur=False)
 
-# Initialize Scan Index for SCAN messages
-variable.data["SI"] = 0  
 
 # Locate the .isa file (extension matches the group shortcut)
 isa_file = None
