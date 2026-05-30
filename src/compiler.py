@@ -32,7 +32,7 @@ class Instruction:
 
     # For easier understanding of which mode in encodeOp
     addressing_modes = {
-        'register': '0000',
+        'register_mode': '0000',
         'register_indirect': '0001',
         'direct': '0010',
         'indirect': '0011',
@@ -88,14 +88,14 @@ class Instruction:
                 return (mode + addr_field).zfill(10)
             
             elif inner_op.endswith('+'):
-                register = inner_op.replace('+', '')
+                reg_name = inner_op.replace('+', '')
                 mode = Instruction.addressing_modes['auto_increment']
-                addr = int(variable.load(register))
+                addr = int(variable.load(reg_name))
                 
             elif inner_op.endswith('-'):
-                register = inner_op.replace('-', '')
+                reg_name = inner_op.replace('-', '')
                 mode = Instruction.addressing_modes['auto_decrement']
-                addr = int(variable.load(register))
+                addr = int(variable.load(reg_name))
                 
             elif inner_op.startswith(('R', 'PC', 'ACC')):
                 mode = Instruction.addressing_modes['register_indirect']
@@ -108,7 +108,7 @@ class Instruction:
             return (mode + Length.addZeros(addr, 6)).zfill(10)
 
         if operand.startswith(('R', 'PC', 'ACC')):
-            mode = Instruction.addressing_modes['register']
+            mode = Instruction.addressing_modes['register_mode']
         else:
             mode = Instruction.addressing_modes['direct']
         addr = int(variable.load(operand))
@@ -246,7 +246,7 @@ class Instruction:
             # Store the current address in the block register operand
             if op in ('CB', 'CF'):
                 block_name = parts[1]
-                hp_addr = HalfPrecision.hpdec2bin(address)
+                hp_addr = HalfPrecision.hpdec2bin(address + 1)
                 register.store(int(variable.load(block_name)), hp_addr)
                 encoded = Instruction.encode(line)
 
